@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+</head>
+<body>
+{{#if deleting}}
+<h2>Вы успешно удалили пользователя с id {{user.id}}</h2>
+{{/if}}
+<label>Идентефикатор</label><br>
+{{user.id}}<br><br>
+<label>Имя</label><br>
+{{user.name}}<br><br>
+<label>Возраст</label><br>
+{{user.age}}<br><br>
+<form method='post' action='http://localhost:3000/api/users/{{user.id}}/delete'>
+{{#unless deleting}}
+<input type = 'submit' value = 'удалить пользователя'>
+{{/unless}}
+</form>
+</body>
+</html>
