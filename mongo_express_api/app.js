@@ -7,9 +7,17 @@ const hbs = require("hbs");
 
 const MongoClient = require("mongodb").MongoClient;
 const objectId = require("mongodb").ObjectId;
-const url = "mongodb://architect:1234@localhost:27017/";
-const mongo_client = new MongoClient(url);
- 
+const url = "mongodb://localhost:27017/usersdb";
+
+const mongoose = require("mongoose");
+const Schema = mongoose.Schema;
+const userScheme = new Schema(
+    {
+        name: String,
+        age: Number
+    }, {versionKey: false});
+const User = mongoose.model("User", userScheme)
+
 const urlencodedParser = express.urlencoded({extended: false});
 app.use(urlencodedParser);
 
@@ -20,6 +28,7 @@ app.engine("hbs", express_hbs(
         extname: "hbs"
     }
 ))
+
 app.set("view engine", "hbs");
 app.set("views", "templates")
 hbs.registerPartials(__dirname + "/templates/partials"); 
@@ -27,69 +36,75 @@ app.use(express.static(__dirname + "/static"));
 
 let db_client;
 
-mongo_client.connect(function(err, client){
+mongoose.connect(url, {auth:{username: "admin", password: "1234"}}, function(err){
     if(err) return console.log(err);
-    db_client = client;
-    app.locals.collection = client.db("usersdb").collection("users");
     app.listen(3000, function(){
         console.log("Сервер ожидает подключения...");
     });
 });
 
 api_router.post("/search", function(req, res){
-    const collection = req.app.locals.collection;
     let user_name = req.body.user_name;
     let user_age = req.body.user_age;
-    console.log(user_name)
-    console.log(user_name && !user_age)
-    user = null
     let output;
 
     if (user_name && user_age){
-        output = collection.find({name:user_name, age:user_age})
+        output = User.find({name:user_name, age:user_age}, (err, users)=>{
+            if (err){
+                return res
+                    .status(404)
+                    .send({message:"User not found!"})
+            }
+            else{
+                return res
+                    .status(200)
+                    .send(users)
+            }
+        })
     }
 
     if (user_name && !user_age){
-        output = collection.find({name:user_name})
+        output = User.find({name:user_name}, (err, users)=>{
+            if (err){
+                return res
+                    .status(404)
+                    .send({message:"User not found!"})
+            }
+            else{
+                return res
+                    .status(200)
+                    .send(users)
+            }
+        })
     }
 
-    if (output){
-        res.render('details', {'user':output})
-        return res
-            .status(200)
-            .send(output)
-    }
-    else{
-        return res.status(404).send(); 
-    }
 });
 
 api_router.get('/', (req, res)=>{   
-    console.log(req.app.locals.collection);
-    const collection = req.app.locals.collection; 
-    users = collection.find().toArray((err, results)=>{
+    users = User.find({}, (err, users)=>{
         if (err){
             console.log(err)
         }
-        res.send(results)
+        res.send(users)
     });
 });
 
 api_router
     .get('/:id/', (req, res) => {
         if(req.params.id){
-            const collection = req.app.locals.collection;
             let id = req.params.id; 
-            collection.findOne((err, user)=>{
-                if(err){
+            User.findById(id, (err, user)=>{
+                if(!user){
                     console.log(err)
                     return res
                         .status(404)
                         .send({message: 'User not found.'})
                 }
-                return res
-                    .status(200)
-                    .send(user)
+                else{
+                    return res
+                        .status(200)
+                        .send(user)
+                }
             });  
         }else{ 
             return res
@@ -101,10 +116,8 @@ api_router
 api_router
     .delete('/:id/delete', (req, res) => {
         if(req.params.id) {
-
-            const collection = req.app.locals.collection;
-            let id = new objectId(req.params.id);
-            collection.findOneAndDelete({_id: id}, (err, user)=>{
+            let id = req.params.id;
+            User.deleteOne({_id: id}, (err, user)=>{
 
                 if(err){
                     console.log(err);    
@@ -112,10 +125,11 @@ api_router
                         .status(404)
                         .send({message: 'User not found.'})
                 } 
-
-                return res
-                    .status(404)
-                    .send(user.value)
+                else{
+                    return res
+                        .status(404)
+                        .send(user)
+                }
             });
 
         } else{
@@ -130,19 +144,22 @@ api_router
         if(req.params.id){
             if(req.query){
 
-                const collection = req.app.locals.collection;
-                let id = new objectId(req.params.id);
-                let user_name = (req.query.name).toString()
-                let user_age = (req.query.age).toString();
+                let id = req.params.id;
+                let user_name = req.query.name;
+                let user_age = req.query.age;
                 
-                collection.findOneAndUpdate(
-                    {_id:id},
-                    {$set: {name: user_name, age: user_age}},
+                User.findByIdAndUpdate(
+                    id,
+                    {name: user_name, age: user_age},
+                    {new: true},
                     (err, result)=>{
-                        if (!err){
-                            return res
-                                .status(200)
-                                .send(result.value)
+                        if (err){
+                            console.log(err)
+                        }
+                        else{
+                        return res
+                            .status(200)
+                            .send(result)
                         }
                     });
                 }
@@ -158,16 +175,10 @@ api_router
     .post('/post', (req, res) => {
         if(req.query){
 
-            const collection = req.app.locals.collection;
             let user_name = req.query.name;
             let user_age = req.query.age;  
-            let max_id = 0
 
-            let user = {
-                name: user_name,
-                age: user_age
-            }
-            collection.insertOne(user, function(err, result){
+            User.create({name: user_name, age: user_age}, function(err, result){
           
                 if(err){ 
                     console.log(err);
@@ -179,12 +190,11 @@ api_router
                     .status(200)
                     .send(result)
             });
-
         }
         else{
-        return res
-            .status(400)
-            .send({message: 'Bad request.'})
+            return res
+                .status(400)
+                .send({message: 'Bad request.'})
         }
     })
 
